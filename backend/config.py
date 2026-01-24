@@ -1,26 +1,46 @@
-"""Configuration for the LLM Council."""
-
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# OpenRouter API key
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+# Không cần key cho local, hoặc tùy cấu hình
+LOCAL_API_URL = "http://localhost:11434/v1" # Ví dụ chạy Ollama hoặc vLLM
 
-# Council members - list of OpenRouter model identifiers
-COUNCIL_MODELS = [
-    "openai/gpt-5.1",
-    "google/gemini-3-pro-preview",
-    "anthropic/claude-sonnet-4.5",
-    "x-ai/grok-4",
+# --- ĐỊNH NGHĨA HỘI ĐỒNG (COUNCIL) ---
+# Mỗi thành viên được định nghĩa rõ: Provider (nhà cung cấp), Model Name, và Endpoint
+MODEL_REGISTRY = {
+    "scholar_gpt": {
+        "provider": "openai",
+        "model": "gpt-3.5",
+        "api_key": OPENAI_API_KEY,
+        "base_url": "https://api.openai.com/v1/chat/completions"
+    },
+    "artist_gemini": {
+        "provider": "google",
+        "model": "gemini-flash-latest",
+        "api_key": GEMINI_API_KEY,
+        # Google dùng REST API khác biệt, xử lý trong llm_client.py
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/models" 
+    },
+    # "local_historian": {
+    #     "provider": "openai_compatible",
+    #     "model": "qwen2.5:3b",
+    #     "api_key": "ollama",
+    #     "base_url": f"{LOCAL_API_URL}/chat/completions"
+    # }
+}
+
+# Danh sách các Key trong MODEL_REGISTRY sẽ tham gia hội đồng
+COUNCIL_MEMBERS = [
+    "scholar_gpt",
+    "artist_gemini",
+    "local_historian"
 ]
 
-# Chairman model - synthesizes final response
-CHAIRMAN_MODEL = "google/gemini-3-pro-preview"
+# Ai là chủ tịch? (Dùng key trong registry)
+CHAIRMAN_ID = "artist_gemini" 
 
-# OpenRouter API endpoint
-OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
-
-# Data directory for conversation storage
+# Thư mục dữ liệu
 DATA_DIR = "data/conversations"

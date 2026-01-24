@@ -1,1 +1,9 @@
 uv
+wikipedia 
+ddgs
+beautifulsoup4 
+requests
+lxml
+duckduckgo_search
+openai
+tavily

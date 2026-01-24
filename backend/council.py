@@ -1,36 +1,50 @@
-"""3-stage LLM Council orchestration."""
-
 from typing import List, Dict, Any, Tuple
-from .openrouter import query_models_parallel, query_model
-from .config import COUNCIL_MODELS, CHAIRMAN_MODEL
-
+import re
+from .llm_client import query_models_parallel, query_model
+from .config import COUNCIL_MEMBERS, CHAIRMAN_ID
+from .researcher import get_web_context 
 
 async def stage1_collect_responses(user_query: str) -> List[Dict[str, Any]]:
     """
-    Stage 1: Collect individual responses from all council models.
-
-    Args:
-        user_query: The user's question
-
-    Returns:
-        List of dicts with 'model' and 'response' keys
+    Stage 1: Research -> Collect responses.
     """
-    messages = [{"role": "user", "content": user_query}]
+    print(f"🌍 Đang tìm kiếm thông tin trên Internet cho: '{user_query}'...")
+    
+    # 1. GỌI RESEARCHER
+    web_context = await get_web_context(user_query)
 
-    # Query all models in parallel
-    responses = await query_models_parallel(COUNCIL_MODELS, messages)
+    # 2. CHUẨN BỊ PROMPT KÈM CONTEXT
+    # Prompt này ép các model phải dùng thông tin vừa tìm được
+    augmented_prompt = f"""
+    Bạn là một chuyên gia về văn hóa và nghệ thuật Việt Nam.
+    
+    TÔI CUNG CẤP CHO BẠN CÁC THÔNG TIN TÌM KIẾM ĐƯỢC TỪ INTERNET SAU ĐÂY:
+    =========================================
+    {web_context}
+    =========================================
+    
+    YÊU CẦU:
+    Sử dụng thông tin trên (nếu phù hợp) kết hợp với kiến thức của bạn để trả lời câu hỏi của người dùng.
+    Nếu thông tin từ Internet có vẻ sai lệch, hãy ưu tiên kiến thức chuẩn xác của bạn nhưng hãy giải thích tại sao.
+    
+    CÂU HỎI NGƯỜI DÙNG:
+    "{user_query}"
+    """
 
-    # Format results
+    messages = [{"role": "user", "content": augmented_prompt}]
+
+    # 3. GỬI CHO HỘI ĐỒNG (Song song)
+    responses = await query_models_parallel(COUNCIL_MEMBERS, messages)
+
     stage1_results = []
-    for model, response in responses.items():
-        if response is not None:  # Only include successful responses
+    for model_id, response in responses.items():
+        if response is not None:
             stage1_results.append({
-                "model": model,
+                "model": model_id,
                 "response": response.get('content', '')
             })
 
     return stage1_results
-
 
 async def stage2_collect_rankings(
     user_query: str,
@@ -38,18 +52,11 @@ async def stage2_collect_rankings(
 ) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
     """
     Stage 2: Each model ranks the anonymized responses.
-
-    Args:
-        user_query: The original user query
-        stage1_results: Results from Stage 1
-
-    Returns:
-        Tuple of (rankings list, label_to_model mapping)
     """
     # Create anonymized labels for responses (Response A, Response B, etc.)
     labels = [chr(65 + i) for i in range(len(stage1_results))]  # A, B, C, ...
 
-    # Create mapping from label to model name
+    # Create mapping from label to model ID
     label_to_model = {
         f"Response {label}": result['model']
         for label, result in zip(labels, stage1_results)
@@ -79,12 +86,6 @@ IMPORTANT: Your final ranking MUST be formatted EXACTLY as follows:
 - Each line should be: number, period, space, then ONLY the response label (e.g., "1. Response A")
 - Do not add any other text or explanations in the ranking section
 
-Example of the correct format for your ENTIRE response:
-
-Response A provides good detail on X but misses Y...
-Response B is accurate but lacks depth on Z...
-Response C offers the most comprehensive answer...
-
 FINAL RANKING:
 1. Response C
 2. Response A
@@ -95,16 +96,16 @@ Now provide your evaluation and ranking:"""
     messages = [{"role": "user", "content": ranking_prompt}]
 
     # Get rankings from all council models in parallel
-    responses = await query_models_parallel(COUNCIL_MODELS, messages)
+    responses = await query_models_parallel(COUNCIL_MEMBERS, messages)
 
     # Format results
     stage2_results = []
-    for model, response in responses.items():
+    for model_id, response in responses.items():
         if response is not None:
             full_text = response.get('content', '')
             parsed = parse_ranking_from_text(full_text)
             stage2_results.append({
-                "model": model,
+                "model": model_id,
                 "ranking": full_text,
                 "parsed_ranking": parsed
             })
@@ -119,14 +120,6 @@ async def stage3_synthesize_final(
 ) -> Dict[str, Any]:
     """
     Stage 3: Chairman synthesizes final response.
-
-    Args:
-        user_query: The original user query
-        stage1_results: Individual model responses from Stage 1
-        stage2_results: Rankings from Stage 2
-
-    Returns:
-        Dict with 'model' and 'response' keys
     """
     # Build comprehensive context for chairman
     stage1_text = "\n\n".join([
@@ -158,18 +151,18 @@ Provide a clear, well-reasoned final answer that represents the council's collec
 
     messages = [{"role": "user", "content": chairman_prompt}]
 
-    # Query the chairman model
-    response = await query_model(CHAIRMAN_MODEL, messages)
+    # Query the chairman model using the ID from config
+    response = await query_model(CHAIRMAN_ID, messages)
 
     if response is None:
         # Fallback if chairman fails
         return {
-            "model": CHAIRMAN_MODEL,
+            "model": CHAIRMAN_ID,
             "response": "Error: Unable to generate final synthesis."
         }
 
     return {
-        "model": CHAIRMAN_MODEL,
+        "model": CHAIRMAN_ID,
         "response": response.get('content', '')
     }
 
@@ -177,15 +170,7 @@ Provide a clear, well-reasoned final answer that represents the council's collec
 def parse_ranking_from_text(ranking_text: str) -> List[str]:
     """
     Parse the FINAL RANKING section from the model's response.
-
-    Args:
-        ranking_text: The full text response from the model
-
-    Returns:
-        List of response labels in ranked order
     """
-    import re
-
     # Look for "FINAL RANKING:" section
     if "FINAL RANKING:" in ranking_text:
         # Extract everything after "FINAL RANKING:"
@@ -193,7 +178,6 @@ def parse_ranking_from_text(ranking_text: str) -> List[str]:
         if len(parts) >= 2:
             ranking_section = parts[1]
             # Try to extract numbered list format (e.g., "1. Response A")
-            # This pattern looks for: number, period, optional space, "Response X"
             numbered_matches = re.findall(r'\d+\.\s*Response [A-Z]', ranking_section)
             if numbered_matches:
                 # Extract just the "Response X" part
@@ -214,13 +198,6 @@ def calculate_aggregate_rankings(
 ) -> List[Dict[str, Any]]:
     """
     Calculate aggregate rankings across all models.
-
-    Args:
-        stage2_results: Rankings from each model
-        label_to_model: Mapping from anonymous labels to model names
-
-    Returns:
-        List of dicts with model name and average rank, sorted best to worst
     """
     from collections import defaultdict
 
@@ -258,12 +235,6 @@ def calculate_aggregate_rankings(
 async def generate_conversation_title(user_query: str) -> str:
     """
     Generate a short title for a conversation based on the first user message.
-
-    Args:
-        user_query: The first user message
-
-    Returns:
-        A short title (3-5 words)
     """
     title_prompt = f"""Generate a very short title (3-5 words maximum) that summarizes the following question.
 The title should be concise and descriptive. Do not use quotes or punctuation in the title.
@@ -274,11 +245,11 @@ Title:"""
 
     messages = [{"role": "user", "content": title_prompt}]
 
-    # Use gemini-2.5-flash for title generation (fast and cheap)
-    response = await query_model("google/gemini-2.5-flash", messages, timeout=30.0)
+    # UPDATE: Use CHAIRMAN_ID instead of a hardcoded string.
+    # query_model now requires a key that exists in MODEL_REGISTRY.
+    response = await query_model(CHAIRMAN_ID, messages, timeout=30.0)
 
     if response is None:
-        # Fallback to a generic title
         return "New Conversation"
 
     title = response.get('content', 'New Conversation').strip()
@@ -296,12 +267,6 @@ Title:"""
 async def run_full_council(user_query: str) -> Tuple[List, List, Dict, Dict]:
     """
     Run the complete 3-stage council process.
-
-    Args:
-        user_query: The user's question
-
-    Returns:
-        Tuple of (stage1_results, stage2_results, stage3_result, metadata)
     """
     # Stage 1: Collect individual responses
     stage1_results = await stage1_collect_responses(user_query)

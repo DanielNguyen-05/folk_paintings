@@ -69,24 +69,28 @@ export const api = {
   /**
    * Send a message and receive streaming updates.
    * @param {string} conversationId - The conversation ID
-   * @param {string} content - The message content
+   * @param {object} payload - The message payload, including content and optional image
    * @param {function} onEvent - Callback function for each event: (eventType, data) => void
    * @returns {Promise<void>}
    */
-  async sendMessageStream(conversationId, content, onEvent) {
+  async sendMessageStream(conversationId, payload, onEvent) {
+    const formData = new FormData();
+    formData.append("content", payload.content || "");
+
+    if (payload.image) {
+      formData.append("image", payload.image.file);
+    }
+
     const response = await fetch(
       `${API_BASE}/api/conversations/${conversationId}/message/stream`,
       {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ content }),
+        method: "POST",
+        body: formData,
       }
     );
 
     if (!response.ok) {
-      throw new Error('Failed to send message');
+      throw new Error("Failed to send message");
     }
 
     const reader = response.body.getReader();
@@ -96,20 +100,19 @@ export const api = {
       const { done, value } = await reader.read();
       if (done) break;
 
-      const chunk = decoder.decode(value);
-      const lines = chunk.split('\n');
+      const chunk = decoder.decode(value, { stream: true });
+      const lines = chunk.split("\n");
 
       for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6);
+        if (line.startsWith("data: ")) {
           try {
-            const event = JSON.parse(data);
+            const event = JSON.parse(line.slice(6));
             onEvent(event.type, event);
-          } catch (e) {
-            console.error('Failed to parse SSE event:', e);
+          } catch (err) {
+            console.error("Failed to parse SSE event:", err);
           }
         }
       }
     }
-  },
+  }
 };

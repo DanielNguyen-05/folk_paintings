@@ -7,3 +7,5 @@ lxml
 duckduckgo_search
 openai
 tavily
+cloudinary
+python-multipart

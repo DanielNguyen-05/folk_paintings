@@ -1,5 +1,4 @@
-uv
-wikipedia 
+uv 
 ddgs
 beautifulsoup4 
 requests
@@ -9,3 +8,5 @@ openai
 tavily
 cloudinary
 python-multipart
+cloudinary
+wikipedia

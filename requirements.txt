@@ -10,3 +10,8 @@ cloudinary
 python-multipart
 cloudinary
 wikipedia
+openai 
+pillow
+python-dotenv
+google-genai
+anthropic

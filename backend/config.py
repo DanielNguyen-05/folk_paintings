@@ -2,49 +2,56 @@ import os
 from dotenv import load_dotenv
 import cloudinary
 import cloudinary.uploader
-
 load_dotenv()
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-# Không cần key cho local, hoặc tùy cấu hình
-LOCAL_API_URL = "http://localhost:11434/v1" # Ví dụ chạy Ollama hoặc vLLM
+OPENAI_API_KEY_S1 = os.getenv("OPENAI_API_KEY_S1")
+OPENAI_API_KEY_S2 = os.getenv("OPENAI_API_KEY_S2") 
+GEMINI_API_KEY_S1 = os.getenv("GEMINI_API_KEY_S1") 
+GEMINI_API_KEY_S2 = os.getenv("GEMINI_API_KEY_S2")
+CHAIRMAN_API_KEY = os.getenv("CHAIRMAN_API_KEY")
 
-# --- ĐỊNH NGHĨA HỘI ĐỒNG (COUNCIL) ---
-# Mỗi thành viên được định nghĩa rõ: Provider (nhà cung cấp), Model Name, và Endpoint
 MODEL_REGISTRY = {
-    "scholar_gpt": {
-        "provider": "openai",
-        "model": "gpt-3.5",
-        "api_key": OPENAI_API_KEY,
-        "base_url": "https://api.openai.com/v1/chat/completions"
-    },
-    "artist_gemini": {
+    # --- CHAIRMAN ---
+    "gemini_chairman": {
         "provider": "google",
         "model": "gemini-flash-latest",
-        "api_key": GEMINI_API_KEY,
-        # Google dùng REST API khác biệt, xử lý trong llm_client.py
+        "api_key": CHAIRMAN_API_KEY,
         "base_url": "https://generativelanguage.googleapis.com/v1beta/models" 
     },
-    # "local_historian": {
-    #     "provider": "openai_compatible",
-    #     "model": "qwen2.5:3b",
-    #     "api_key": "ollama",
-    #     "base_url": f"{LOCAL_API_URL}/chat/completions"
-    # }
+
+    # --- STAGE 1 ---
+    "gpt_stage1": {
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "api_key": OPENAI_API_KEY_S1,
+        "base_url": "https://api.openai.com/v1/chat/completions"
+    },
+    "gemini_stage1": {
+        "provider": "google",
+        "model": "gemini-flash-latest",
+        "api_key": GEMINI_API_KEY_S1,
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/models" 
+    },
+    
+    # --- STAGE 2 ---
+    "gpt_stage2": {
+        "provider": "openai",
+        "model": "gpt-4o-mini", # Hoặc model mạnh hơn nếu cần
+        "api_key": OPENAI_API_KEY_S2,
+        "base_url": "https://api.openai.com/v1/chat/completions"
+    },
+    "gemini_stage2": {
+        "provider": "google",
+        "model": "gemini-flash-latest", 
+        "api_key": GEMINI_API_KEY_S2,
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/models"
+    },
 }
 
-# Danh sách các Key trong MODEL_REGISTRY sẽ tham gia hội đồng
-COUNCIL_MEMBERS = [
-    "scholar_gpt",
-    "artist_gemini",
-    "local_historian"
-]
+COUNCIL_MEMBERS_STAGE1 = ["gpt_stage1", "gemini_stage1"]
 
-# Ai là chủ tịch? (Dùng key trong registry)
-CHAIRMAN_ID = "artist_gemini" 
+CHAIRMAN_ID = "gemini_chairman" 
 
-# Thư mục dữ liệu
 DATA_DIR = "data/conversations"
 
 # Cấu hình Cloudinary để lưu trữ ảnh

@@ -20,6 +20,9 @@ from .council import (
     calculate_aggregate_rankings,
 )
 
+from .OutpaintingCouncil import OutpaintingCouncil
+# from .StoryGenerationCouncil import StoryGenerationCouncil
+
 app = FastAPI(title="LLM Council API")
 
 # Enable CORS for local development
@@ -34,28 +37,22 @@ app.add_middleware(
 
 class CreateConversationRequest(BaseModel):
     """Request to create a new conversation."""
-
     pass
 
 
 class SendMessageRequest(BaseModel):
     """Request to send a message in a conversation."""
-
     content: str
-
 
 class ConversationMetadata(BaseModel):
     """Conversation metadata for list view."""
-
     id: str
     created_at: str
     title: str
     message_count: int
 
-
 class Conversation(BaseModel):
     """Full conversation with all messages."""
-
     id: str
     created_at: str
     title: str
@@ -215,6 +212,87 @@ async def send_message_stream(
             "Connection": "keep-alive",
         }
     )
+
+@app.post("/api/tasks/outpaint")
+async def run_outpainting_task(
+    content: str = Form(""),
+    image_description: str = Form(""),
+    image: UploadFile | None = File(None)
+):
+    """
+    Run the outpainting task with image input.
+    Returns the complete 3-stage process result.
+    """
+    try:
+        council = OutpaintingCouncil()
+
+        # Handle image data
+        image_data = None
+        image_mime_type = "image/jpeg"
+
+        if image:
+            image_data = await image.read()
+            # Determine mime type from filename or content
+            if image.filename:
+                if image.filename.lower().endswith('.png'):
+                    image_mime_type = "image/png"
+                elif image.filename.lower().endswith('.webp'):
+                    image_mime_type = "image/webp"
+                # Default to jpeg
+
+        # Run the outpainting task
+        result = await council.run_task(
+            user_query=content,
+            image_description=image_description,
+            image_data=image_data,
+            image_mime_type=image_mime_type
+        )
+
+        return result
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Outpainting task failed: {str(e)}")
+
+
+# @app.post("/api/tasks/story")
+# async def run_story_generation_task(
+#     content: str = Form(""),
+#     image_description: str = Form(""),
+#     image: UploadFile | None = File(None)
+# ):
+#     """
+#     Run the story generation task with optional image input.
+#     Returns the complete 3-stage process result.
+#     """
+#     try:
+#         council = StoryGenerationCouncil()
+
+#         # Handle image data
+#         image_data = None
+#         image_mime_type = "image/jpeg"
+
+#         if image:
+#             image_data = await image.read()
+#             # Determine mime type from filename or content
+#             if image.filename:
+#                 if image.filename.lower().endswith('.png'):
+#                     image_mime_type = "image/png"
+#                 elif image.filename.lower().endswith('.webp'):
+#                     image_mime_type = "image/webp"
+#                 # Default to jpeg
+
+#         # Run the story generation task
+#         result = await council.run_task(
+#             user_query=content,
+#             image_description=image_description,
+#             image_data=image_data,
+#             image_mime_type=image_mime_type
+#         )
+
+#         return result
+
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=f"Story generation task failed: {str(e)}")
 
 
 if __name__ == "__main__":

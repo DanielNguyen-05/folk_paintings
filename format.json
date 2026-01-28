@@ -1,0 +1,153 @@
+``` này ok hơn
+Return ONLY valid JSON (no markdown, no extra text).
+I want to scale/expand this image using outpainting. Please fill in the following JSON template with the most detailed information.
+
+{
+  "task_type": "outpainting",
+  "input_image": "",
+  "expansion_settings": {
+    "direction": "", 
+    "pixel_amount":,
+    "mask_blur":
+  },
+  "context_awareness": {
+    "original_style": "",
+    "seamless_blending_keywords": []
+  },
+  "scenarios": [
+    {
+      "scenario_id": "",
+      "description": "",
+      "prompt": ""
+    },
+    {
+      "scenario_id": "",
+      "description": "",
+      "prompt": ""
+    },
+    {
+      "scenario_id": "",
+      "description": "",
+      "prompt": ""
+    },
+    {
+      "scenario_id": "",
+      "description": "",
+      "prompt": ""
+    }
+  ]
+}
+```
+
+```
+Return ONLY valid JSON (no markdown, no extra text).
+I want to scale/expand this image using outpainting. Please fill in the following JSON template with the most detailed information.
+
+{
+  "task_type": "outpainting",
+  "input_image_analysis": {
+    "original_style": "",
+    "dominant_colors": [],
+  },
+  "expansion_settings": {
+    "directions": [],
+    "expansion_amount": {
+      "top": 0,
+      "bottom": 0,
+      "left": 0,
+      "right": 0,
+      "unit": "pixels"
+    },
+    "new_dimensions": {
+      "width": 0,
+      "height": 0
+    },
+    "mask_blur": 0,
+    "feathering": 0
+  },
+  "seamless_blending": {
+    "style_consistency_keywords": [],
+    "texture_matching": "",
+    "color_harmony": "",
+    "pattern_continuation": ""
+  },
+  "outpainting_scenarios": [
+    {
+      "scenario_id": "",
+      "description": "",
+      "prompt": ""
+    },
+    {
+      "scenario_id": "",
+      "description": "",
+      "prompt": ""
+    },
+    {
+      "scenario_id": "",
+      "description": "",
+      "prompt": ""
+    },
+    {
+      "scenario_id": "",
+      "description": "",
+      "prompt": ""
+    }
+  ],
+  "recommended_settings": {
+    "denoising_strength": 0,
+    "cfg_scale": 0,
+    "steps": 0
+  }
+}
+```
+
+
+{
+  "manga_page": {
+    "page_info": {
+      "page_number": 1,
+      "title": "",
+      "total_frames": 4,
+      "theme": "Introduction to Dong Ho paintings"
+    },
+    
+    "frames": [
+      {
+        "frame_number": 1,
+        "size": "",
+        "scene": "",
+        "characters": [],
+        "dialogue": [],
+        "narration": "",
+        "art_direction": ""
+      },
+      {
+        "frame_number": 2,
+        "size": "",
+        "scene": "",
+        "characters": [],
+        "dialogue": [],
+        "narration": "",
+        "art_direction": ""
+      },
+      {
+        "frame_number": 3,
+        "size": "",
+        "scene": "",
+        "characters": [],
+        "dialogue": [],
+        "narration": "",
+        "art_direction": ""
+      },
+      {
+        "frame_number": 4,
+        "size": "",
+        "scene": "",
+        "characters": [],
+        "dialogue": [],
+        "narration": "",
+        "art_direction": ""
+      }
+    ]
+  }
+}

@@ -70,7 +70,7 @@ async def get_conversation(conversation_id: str):
         raise HTTPException(status_code=404, detail="Conversation not found")
     return conversation
 
-@app.post("/api/conversations/{conversation_id}/message")
+@app.post("/api/conversations/{conversation_id}/message/stream")
 async def send_message_and_process(
     conversation_id: str,
     content: str = Form(...), # User Prompt

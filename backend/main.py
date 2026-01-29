@@ -1,301 +1,179 @@
-"""FastAPI backend for LLM Council."""
+"""FastAPI backend for LLM Council (Outpainting)."""
 
 from fastapi import FastAPI, HTTPException, Form, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 import uuid
-import json
-import asyncio
+import os
+import shutil
+import cloudinary
 import cloudinary.uploader
 
 from . import storage
-from .council import (
-    run_full_council,
-    generate_conversation_title,
-    stage1_collect_responses,
-    stage2_collect_rankings,
-    stage3_synthesize_final,
-    calculate_aggregate_rankings,
-)
-
 from .OutpaintingCouncil import OutpaintingCouncil
-# from .StoryGenerationCouncil import StoryGenerationCouncil
 
-app = FastAPI(title="LLM Council API")
+# --- Cấu hình thư mục lưu ảnh Local ---
+LOCAL_IMG_DIR = "local_storage/images"
+os.makedirs(LOCAL_IMG_DIR, exist_ok=True)
 
-# Enable CORS for local development
+app = FastAPI(title="Outpainting Council API")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+council = OutpaintingCouncil()
 
+# --- Pydantic Models ---
 class CreateConversationRequest(BaseModel):
-    """Request to create a new conversation."""
-    pass
-
-
-class SendMessageRequest(BaseModel):
-    """Request to send a message in a conversation."""
-    content: str
+    title: Optional[str] = "New Outpainting Task"
 
 class ConversationMetadata(BaseModel):
-    """Conversation metadata for list view."""
     id: str
     created_at: str
     title: str
     message_count: int
 
 class Conversation(BaseModel):
-    """Full conversation with all messages."""
     id: str
     created_at: str
     title: str
     messages: List[Dict[str, Any]]
 
+# --- Endpoints ---
 
 @app.get("/")
 async def root():
-    """Health check endpoint."""
-    return {"status": "ok", "service": "LLM Council API"}
-
+    return {"status": "ok", "service": "Outpainting Council API"}
 
 @app.get("/api/conversations", response_model=List[ConversationMetadata])
 async def list_conversations():
-    """List all conversations (metadata only)."""
     return storage.list_conversations()
-
 
 @app.post("/api/conversations", response_model=Conversation)
 async def create_conversation(request: CreateConversationRequest):
-    """Create a new conversation."""
     conversation_id = str(uuid.uuid4())
     conversation = storage.create_conversation(conversation_id)
+    if request.title:
+        storage.update_conversation_title(conversation_id, request.title)
     return conversation
-
 
 @app.get("/api/conversations/{conversation_id}", response_model=Conversation)
 async def get_conversation(conversation_id: str):
-    """Get a specific conversation with all its messages."""
     conversation = storage.get_conversation(conversation_id)
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return conversation
 
-
 @app.post("/api/conversations/{conversation_id}/message")
-async def send_message(conversation_id: str, request: SendMessageRequest):
-    """
-    Send a message and run the 3-stage council process.
-    Returns the complete response with all stages.
-    """
-    # Check if conversation exists
-    conversation = storage.get_conversation(conversation_id)
-    if conversation is None:
-        raise HTTPException(status_code=404, detail="Conversation not found")
-
-    # Check if this is the first message
-    is_first_message = len(conversation["messages"]) == 0
-
-    # Add user message
-    storage.add_user_message(conversation_id, request.content)
-
-    # If this is the first message, generate a title
-    if is_first_message:
-        title = await generate_conversation_title(request.content)
-        storage.update_conversation_title(conversation_id, title)
-
-    # Run the 3-stage council process
-    stage1_results, stage2_results, stage3_result, metadata = await run_full_council(
-        request.content
-    )
-
-    # Add assistant message with all stages
-    storage.add_assistant_message(
-        conversation_id, stage1_results, stage2_results, stage3_result
-    )
-
-    # Return the complete response with metadata
-    return {
-        "stage1": stage1_results,
-        "stage2": stage2_results,
-        "stage3": stage3_result,
-        "metadata": metadata,
-    }
-
-
-@app.post("/api/conversations/{conversation_id}/message/stream")
-async def send_message_stream(
+async def send_message_and_process(
     conversation_id: str,
-    content: str = Form(""),
+    content: str = Form(...), # User Prompt
     image: UploadFile | None = File(None)
 ):
     """
-    Send a message and stream the 3-stage council process.
-    Returns Server-Sent Events as each stage completes.
+    Main Endpoint xử lý:
+    1. Kiểm tra keyword ("scale", "expand", "outpainting"...).
+    2. Nếu có keyword + ảnh -> Lưu Local -> Upload Cloudinary -> Gọi Council.
+    3. Nếu không -> Trả về thông báo bình thường (hoặc chat logic khác).
     """
-    # Check if conversation exists
+    
+    # 1. Validate Conversation
     conversation = storage.get_conversation(conversation_id)
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    # Check if this is the first message
-    is_first_message = len(conversation["messages"]) == 0
+    # 2. Kiểm tra Keywords (Điều kiện kích hoạt Task)
+    trigger_keywords = ["scale", "expand", "extend", "outpainting", "mở rộng"]
+    is_outpainting_task = any(keyword in content.lower() for keyword in trigger_keywords)
 
-    async def event_generator():
-        image_url = None
+    image_url = None
+    local_image_path = None
+    image_data = None
+    image_mime_type = "image/jpeg"
 
-        if image:
-            file_bytes = await image.read()
+    # 3. Xử lý ảnh (Chỉ xử lý nếu User có gửi ảnh)
+    if image:
+        # a. Đọc bytes
+        image_data = await image.read()
+        
+        # Xác định mime type
+        filename = image.filename.lower() if image.filename else "image.jpg"
+        if filename.endswith('.png'): image_mime_type = "image/png"
+        elif filename.endswith('.webp'): image_mime_type = "image/webp"
+
+        # b. LƯU LOCAL
+        # Tạo tên file unique để tránh trùng đè
+        local_filename = f"{uuid.uuid4()}_{filename}"
+        local_image_path = os.path.join(LOCAL_IMG_DIR, local_filename)
+        
+        with open(local_image_path, "wb") as f:
+            f.write(image_data)
+        print(f"💾 Đã lưu ảnh local tại: {local_image_path}")
+
+        # c. UPLOAD CLOUDINARY (Để lấy URL public hiển thị trên Web Frontend)
+        try:
+            # Upload từ bytes data
             upload_result = cloudinary.uploader.upload(
-                file_bytes, folder="llm_council"
+                image_data, 
+                folder="outpainting_tasks"
             )
             image_url = upload_result["secure_url"]
-            print(f"Uploaded image to {image_url}")
+        except Exception as e:
+            print(f"⚠️ Cloudinary upload failed: {e}")
+            # Nếu lỗi upload, ta vẫn chạy tiếp được vì đã có image_data và local path
 
+    # 4. Lưu User Message vào DB
+    storage.add_user_message(conversation_id, content, image_url, local_image_path)
+    
+    # Cập nhật title hội thoại
+    if len(conversation["messages"]) == 0:
+        short_title = (content[:30] + '...') if len(content) > 30 else content
+        storage.update_conversation_title(conversation_id, short_title)
+
+    # 5. QUYẾT ĐỊNH LOGIC XỬ LÝ
+    if is_outpainting_task and image_data:
         try:
-            # Add user message
-            storage.add_user_message(conversation_id, content)
-
-            # Start title generation in parallel (don't await yet)
-            title_task = None
-            if is_first_message:
-                title_task = asyncio.create_task(generate_conversation_title(content))
-
-            # Stage 1: Collect responses
-            yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
-            stage1_results = await stage1_collect_responses(content)
-            yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
-
-            # Stage 2: Collect rankings
-            yield f"data: {json.dumps({'type': 'stage2_start'})}\n\n"
-            stage2_results, label_to_model = await stage2_collect_rankings(content, stage1_results)
-            aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
-            yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings}})}\n\n"
-
-            # Stage 3: Synthesize final answer
-            yield f"data: {json.dumps({'type': 'stage3_start'})}\n\n"
-            stage3_result = await stage3_synthesize_final(content, stage1_results, stage2_results)
-            yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage3_result})}\n\n"
-
-            # Wait for title generation if it was started
-            if title_task:
-                title = await title_task
-                storage.update_conversation_title(conversation_id, title)
-                yield f"data: {json.dumps({'type': 'title_complete', 'data': {'title': title}})}\n\n"
-
-            # Save complete assistant message
-            storage.add_assistant_message(
-                conversation_id,
-                stage1_results,
-                stage2_results,
-                stage3_result
+            print(f"🚀 Detected Outpainting Task for {conversation_id}...")
+            
+            # Gọi Council (Truyền image_data trực tiếp để AI xử lý nhanh nhất)
+            result = await council.run_task(
+                user_query=content,
+                image_url=image_url,       # Để AI reference nếu cần
+                image_data=image_data,     # Dữ liệu ảnh raw (quan trọng cho Gemini REST)
+                image_mime_type=image_mime_type
             )
-
-            # Send completion event
-            yield f"data: {json.dumps({'type': 'complete'})}\n\n"
+            
+            # Lưu kết quả AI
+            storage.add_assistant_message(conversation_id, result, task_type="outpainting")
+            return result
 
         except Exception as e:
-            # Send error event
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
+            import traceback
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=f"Council processing failed: {str(e)}")
+            
+    else:
+        # TRƯỜNG HỢP: Không phải task outpainting hoặc không có ảnh
+        # Bạn có thể nối vào một Chatbot bình thường ở đây.
+        # Hiện tại tôi sẽ trả về một thông báo đơn giản.
+        
+        fallback_response = {
+            "final_result": {
+                "selected_response": "Tôi là AI chuyên về Outpainting (Mở rộng tranh). Vui lòng gửi kèm một bức ảnh và dùng các từ khóa như 'expand', 'scale', 'outpainting' để tôi bắt đầu làm việc.",
+                "selected_model": "system",
+                "evaluation": "No task triggered"
+            }
         }
-    )
-
-@app.post("/api/tasks/outpaint")
-async def run_outpainting_task(
-    content: str = Form(""),
-    image_description: str = Form(""),
-    image: UploadFile | None = File(None)
-):
-    """
-    Run the outpainting task with image input.
-    Returns the complete 3-stage process result.
-    """
-    try:
-        council = OutpaintingCouncil()
-
-        # Handle image data
-        image_data = None
-        image_mime_type = "image/jpeg"
-
-        if image:
-            image_data = await image.read()
-            # Determine mime type from filename or content
-            if image.filename:
-                if image.filename.lower().endswith('.png'):
-                    image_mime_type = "image/png"
-                elif image.filename.lower().endswith('.webp'):
-                    image_mime_type = "image/webp"
-                # Default to jpeg
-
-        # Run the outpainting task
-        result = await council.run_task(
-            user_query=content,
-            image_description=image_description,
-            image_data=image_data,
-            image_mime_type=image_mime_type
-        )
-
-        return result
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Outpainting task failed: {str(e)}")
-
-
-# @app.post("/api/tasks/story")
-# async def run_story_generation_task(
-#     content: str = Form(""),
-#     image_description: str = Form(""),
-#     image: UploadFile | None = File(None)
-# ):
-#     """
-#     Run the story generation task with optional image input.
-#     Returns the complete 3-stage process result.
-#     """
-#     try:
-#         council = StoryGenerationCouncil()
-
-#         # Handle image data
-#         image_data = None
-#         image_mime_type = "image/jpeg"
-
-#         if image:
-#             image_data = await image.read()
-#             # Determine mime type from filename or content
-#             if image.filename:
-#                 if image.filename.lower().endswith('.png'):
-#                     image_mime_type = "image/png"
-#                 elif image.filename.lower().endswith('.webp'):
-#                     image_mime_type = "image/webp"
-#                 # Default to jpeg
-
-#         # Run the story generation task
-#         result = await council.run_task(
-#             user_query=content,
-#             image_description=image_description,
-#             image_data=image_data,
-#             image_mime_type=image_mime_type
-#         )
-
-#         return result
-
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=f"Story generation task failed: {str(e)}")
-
+        
+        storage.add_assistant_message(conversation_id, fallback_response, task_type="chat")
+        return fallback_response
 
 if __name__ == "__main__":
     import uvicorn
-
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    uvicorn.run(app, host="0.0.0.0", port=8000)

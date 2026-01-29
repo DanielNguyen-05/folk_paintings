@@ -7,166 +7,118 @@ from typing import List, Dict, Any, Optional
 from pathlib import Path
 from .config import DATA_DIR
 
-
 def ensure_data_dir():
-    """Ensure the data directory exists."""
     Path(DATA_DIR).mkdir(parents=True, exist_ok=True)
 
-
 def get_conversation_path(conversation_id: str) -> str:
-    """Get the file path for a conversation."""
     return os.path.join(DATA_DIR, f"{conversation_id}.json")
 
-
 def create_conversation(conversation_id: str) -> Dict[str, Any]:
-    """
-    Create a new conversation.
-
-    Args:
-        conversation_id: Unique identifier for the conversation
-
-    Returns:
-        New conversation dict
-    """
     ensure_data_dir()
-
     conversation = {
         "id": conversation_id,
         "created_at": datetime.utcnow().isoformat(),
-        "title": "New Conversation",
+        "title": "New Session",
         "messages": []
     }
-
-    # Save to file
-    path = get_conversation_path(conversation_id)
-    with open(path, 'w') as f:
-        json.dump(conversation, f, indent=2)
-
+    save_conversation(conversation)
     return conversation
 
-
 def get_conversation(conversation_id: str) -> Optional[Dict[str, Any]]:
-    """
-    Load a conversation from storage.
-
-    Args:
-        conversation_id: Unique identifier for the conversation
-
-    Returns:
-        Conversation dict or None if not found
-    """
     path = get_conversation_path(conversation_id)
-
     if not os.path.exists(path):
         return None
-
-    with open(path, 'r') as f:
+    with open(path, 'r', encoding='utf-8') as f:
         return json.load(f)
 
-
 def save_conversation(conversation: Dict[str, Any]):
-    """
-    Save a conversation to storage.
-
-    Args:
-        conversation: Conversation dict to save
-    """
     ensure_data_dir()
-
     path = get_conversation_path(conversation['id'])
-    with open(path, 'w') as f:
-        json.dump(conversation, f, indent=2)
-
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(conversation, f, indent=2, ensure_ascii=False)
 
 def list_conversations() -> List[Dict[str, Any]]:
-    """
-    List all conversations (metadata only).
-
-    Returns:
-        List of conversation metadata dicts
-    """
     ensure_data_dir()
-
     conversations = []
-    for filename in os.listdir(DATA_DIR):
-        if filename.endswith('.json'):
-            path = os.path.join(DATA_DIR, filename)
-            with open(path, 'r') as f:
-                data = json.load(f)
-                # Return metadata only
-                conversations.append({
-                    "id": data["id"],
-                    "created_at": data["created_at"],
-                    "title": data.get("title", "New Conversation"),
-                    "message_count": len(data["messages"])
-                })
-
-    # Sort by creation time, newest first
+    if os.path.exists(DATA_DIR):
+        for filename in os.listdir(DATA_DIR):
+            if filename.endswith('.json'):
+                try:
+                    path = os.path.join(DATA_DIR, filename)
+                    with open(path, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                        conversations.append({
+                            "id": data["id"],
+                            "created_at": data["created_at"],
+                            "title": data.get("title", "New Conversation"),
+                            "message_count": len(data["messages"])
+                        })
+                except Exception:
+                    continue
     conversations.sort(key=lambda x: x["created_at"], reverse=True)
-
     return conversations
 
-
-def add_user_message(conversation_id: str, content: str):
+def add_user_message(
+    conversation_id: str, 
+    content: str, 
+    image_url: Optional[str] = None,
+    local_image_path: Optional[str] = None
+):
     """
-    Add a user message to a conversation.
-
-    Args:
-        conversation_id: Conversation identifier
-        content: User message content
+    Lưu tin nhắn User kèm Cloudinary URL và đường dẫn file Local.
     """
     conversation = get_conversation(conversation_id)
     if conversation is None:
         raise ValueError(f"Conversation {conversation_id} not found")
 
-    conversation["messages"].append({
+    message = {
         "role": "user",
-        "content": content
-    })
+        "content": content,
+        "timestamp": datetime.utcnow().isoformat()
+    }
+    
+    if image_url:
+        message["image_url"] = image_url
+    
+    if local_image_path:
+        message["local_image_path"] = local_image_path
 
+    conversation["messages"].append(message)
     save_conversation(conversation)
-
 
 def add_assistant_message(
     conversation_id: str,
-    stage1: List[Dict[str, Any]],
-    stage2: List[Dict[str, Any]],
-    stage3: Dict[str, Any]
+    council_result: Dict[str, Any],
+    task_type: str = "outpainting"
 ):
     """
-    Add an assistant message with all 3 stages to a conversation.
-
-    Args:
-        conversation_id: Conversation identifier
-        stage1: List of individual model responses
-        stage2: List of model rankings
-        stage3: Final synthesized response
+    Lưu kết quả trả về từ Assistant (AI).
     """
     conversation = get_conversation(conversation_id)
     if conversation is None:
         raise ValueError(f"Conversation {conversation_id} not found")
+    
+    # Lấy nội dung text hiển thị (fallback nếu UI chỉ hiển thị text đơn giản)
+    display_content = "Task completed."
+    if task_type == "chat":
+        display_content = council_result.get("final_result", {}).get("selected_response", "")
+    elif task_type == "outpainting":
+        final = council_result.get("final_result", {})
+        if final:
+             display_content = "Outpainting Prompt Generated Successfully."
 
     conversation["messages"].append({
         "role": "assistant",
-        "stage1": stage1,
-        "stage2": stage2,
-        "stage3": stage3
+        "content": display_content,
+        "task_type": task_type,
+        "timestamp": datetime.utcnow().isoformat(),
+        "council_response": council_result 
     })
 
     save_conversation(conversation)
 
-
 def update_conversation_title(conversation_id: str, title: str):
-    """
-    Update the title of a conversation.
-
-    Args:
-        conversation_id: Conversation identifier
-        title: New title for the conversation
-    """
     conversation = get_conversation(conversation_id)
-    if conversation is None:
-        raise ValueError(f"Conversation {conversation_id} not found")
-
+    if conversation is None: return
     conversation["title"] = title
     save_conversation(conversation)

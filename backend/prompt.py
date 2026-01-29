@@ -1,7 +1,8 @@
 
 def outpainting_prompt_stage1():
     prompt = f"""Return ONLY valid JSON (no markdown, no extra text).
-I want to scale/expand this image using outpainting by adding detailed scenery or elements around the image, NOT decorating its borders. Please fill in the following JSON template with the most detailed information.
+I want to scale/expand this image using outpainting by adding detailed scenery or elements around the image, NOT decorating its borders or changing the original details. 
+Please fill in the following JSON template with the most detailed information.
 
 {{
   "task_type": "outpainting",
@@ -41,7 +42,7 @@ I want to scale/expand this image using outpainting by adding detailed scenery o
     return prompt
 
 def outpainting_prompt_stage2(original_model, original_response):
-    prompt = f"""You are an expert folk painting outpainter. Look at this image and review/complete the following outpainting JSON to make it perfect.
+  prompt = f"""You are an expert folk painting outpainter. Look at this image and review/complete the following outpainting JSON to make it perfect.
 
 Initial Response from {original_model}: 
 {original_response}
@@ -49,14 +50,14 @@ Initial Response from {original_model}:
 Your task: Complete and perfect this outpainting JSON by:
 1. Enhancing the expansion settings with appropriate direction, pixel_amount, and mask_blur values
 2. Adding detailed original_style description and seamless_blending_keywords
-3. Describe creative and detailed surrounding scenarios without affecting the original image.
+3. Describe creative and detailed surrounding scenarios without affecting the original details in image.
 
 Provide the same format outpainting JSON:
 """
-    return prompt
+  return prompt
 
 def outpainting_prompt_stage3(responses_text):
-    prompt = f"""You are an expert evaluator of folk painting outpainting JSON configurations. 
+  prompt = f"""You are an expert evaluator of folk painting outpainting JSON configurations. 
 I have several candidates for the outpainting configuration. Some are **Initial Versions (Stage 1)** and some are **Refined Versions (Stage 2)**.
 
 Your goal is to compare them and select the single best JSON configuration that yields the most artistic, seamless, and culturally appropriate outpainting for a Vietnamese traditional folk painting.
@@ -77,7 +78,7 @@ BEST RESPONSE: Response X (where X is A, B, C, etc.)
 
 Provide your evaluation and final selection:
 """
-    return prompt
+  return prompt
 
 
 def storyGeneration_prompt():

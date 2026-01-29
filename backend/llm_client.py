@@ -6,14 +6,11 @@ from typing import List, Dict, Any, Optional
 from .config import MODEL_REGISTRY
 
 async def query_model(
-    model_id: str,
-    messages: List[Dict[str, str]],
-    timeout: float = 60.0,
-    retries: int = 3,
-    image_data: Optional[bytes] = None,
-    image_mime_type: str = "image/jpeg",
-    image_url: Optional[str] = None 
-) -> Optional[Dict[str, Any]]:
+    model_id: str, messages: List[Dict[str, str]],
+    timeout: float = 60.0, retries: int = 3,
+    image_data: Optional[bytes] = None, image_mime_type: str = "image/jpeg",
+    image_url: Optional[str] = None) -> Optional[Dict[str, Any]]:
+
     config = MODEL_REGISTRY.get(model_id)
     if not config:
         print(f"Error: Model ID '{model_id}' not found.")
@@ -175,17 +172,13 @@ async def _call_google_rest(config, messages, timeout, image_data: bytes = None,
                 'model_used': config['model']
             }
         except (KeyError, IndexError):
-            # Log raw response để debug nếu cần
             # print(f"Debug Google Resp: {data}")
             return {'content': "Error: Empty response from Gemini", 'model_used': config['model']}
 
 async def query_models_parallel(
-    model_ids: List[str],
-    messages: List[Dict[str, str]],
-    image_data: Optional[bytes] = None,
-    image_mime_type: str = "image/jpeg",
-    image_url: Optional[str] = None 
-) -> Dict[str, Optional[Dict[str, Any]]]:
+    model_ids: List[str], messages: List[Dict[str, str]],
+    image_data: Optional[bytes] = None, image_mime_type: str = "image/jpeg",
+    image_url: Optional[str] = None) -> Dict[str, Optional[Dict[str, Any]]]:
     """
     Gọi song song nhiều model ID khác nhau.
     """

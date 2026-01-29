@@ -4,8 +4,8 @@ import cloudinary
 import cloudinary.uploader
 load_dotenv()
 
-OPENAI_API_KEY_S1 = os.getenv("OPENAI_API_KEY_S1")
-OPENAI_API_KEY_S2 = os.getenv("OPENAI_API_KEY_S2") 
+OPENAI_API_KEY_S1 = os.getenv("OPENAI_API_KEY")
+OPENAI_API_KEY_S2 = os.getenv("OPENAI_API_KEY") 
 GEMINI_API_KEY_S1 = os.getenv("GEMINI_API_KEY_S1") 
 GEMINI_API_KEY_S2 = os.getenv("GEMINI_API_KEY_S2")
 CHAIRMAN_API_KEY = os.getenv("CHAIRMAN_API_KEY")
@@ -49,6 +49,7 @@ MODEL_REGISTRY = {
 }
 
 COUNCIL_MEMBERS_STAGE1 = ["gpt_stage1", "gemini_stage1"]
+COUNCIL_MEMBERS_STAGE2 = ["gpt_stage2", "gemini_stage2"]
 
 CHAIRMAN_ID = "gemini_chairman" 
 

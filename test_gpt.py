@@ -4,14 +4,17 @@ from openai import OpenAI
 from dotenv import load_dotenv
 load_dotenv()
 
+# Retrieve OpenAI API key from the environment variables
 OPEN_API_KEY = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=OPEN_API_KEY)
 
-IMAGE_URL = "https://res.cloudinary.com/dvxmaiofh/image/upload/v1769313938/llm_council/iyh1xp24rmjsk8bxsvaz.jpg"
-IMAGE_PATH ="img/dongho_0001_chuot-vinh-quy.jpg"
+# Define the path for the local image
+IMAGE_PATH = "img/dongho_0001_chuot-vinh-quy.jpg"
 
-with open(IMAGE_PATH, "rb") as image_file:
-  image_b64 = base64.b64encode(image_file.read()).decode('utf-8')
+def encode_image(img_path):
+  with open(img_path, "rb") as image_file:
+    return base64.b64encode(image_file.read()).decode('utf-8')
+
 
 prompt = """Return ONLY valid JSON (no markdown, no extra text).
   I want to scale/expand this image using outpainting by adding detailed scenery or elements around the image, NOT decorating its borders. Please fill in the following JSON template with the most detailed information.
@@ -53,20 +56,27 @@ prompt = """Return ONLY valid JSON (no markdown, no extra text).
   }
 """
 
-response = client.responses.create(
-  model="gpt-4o-mini",
-  input=[
-    {
-      "role": "user",
-      "content": [
-        { "type": "input_text", "text": prompt },
-        {
-            "type": "input_image",
-            "image_url": IMAGE_URL
-        }
-      ]
-    }
-  ]
-)
+def call_gpt(client, prompt: str, images: list, model: str):
+  contents = [{"type": "input_text", "text": prompt}]
 
-print(response)
+  for img_path in images:
+    contents.append({
+      "type": "input_image",
+      "image_url": f"data:image/jpeg;base64,{encode_image(img_path)}"
+    })
+
+  response = client.responses.create(
+    model=model,
+    input=[{
+        "role": "user",
+        "content": contents
+      }]
+  )
+
+  return response.output_text
+
+images = [IMAGE_PATH]
+
+response_output = call_gpt(client, prompt, images, model="gpt-4o-mini")
+
+print(response_output)

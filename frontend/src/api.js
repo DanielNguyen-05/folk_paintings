@@ -2,7 +2,7 @@
  * API client for the LLM Council backend.
  */
 
-const API_BASE = 'http://localhost:8001';
+const API_BASE = 'http://localhost:8000';
 
 export const api = {
   /**
@@ -100,16 +100,26 @@ export const api = {
       const { done, value } = await reader.read();
       if (done) break;
 
-      const chunk = decoder.decode(value, { stream: true });
-      const lines = chunk.split("\n");
+      let buffer = "";
 
-      for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          try {
-            const event = JSON.parse(line.slice(6));
-            onEvent(event.type, event);
-          } catch (err) {
-            console.error("Failed to parse SSE event:", err);
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        const events = buffer.split("\n\n");
+        buffer = events.pop();
+
+        for (const evt of events) {
+          if (evt.startsWith("data: ")) {
+            try {
+              const json = evt.replace(/^data:\s*/, "");
+              const event = JSON.parse(json);
+              onEvent(event.type, event.data);
+            } catch (e) {
+              console.error("SSE parse error", e);
+            }
           }
         }
       }

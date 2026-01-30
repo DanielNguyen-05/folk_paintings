@@ -2,6 +2,7 @@
 
 from fastapi import FastAPI, HTTPException, Form, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 import uuid
@@ -9,6 +10,7 @@ import os
 import shutil
 import cloudinary
 import cloudinary.uploader
+import json
 
 from . import storage
 from .OutpaintingCouncil import OutpaintingCouncil
@@ -70,7 +72,7 @@ async def get_conversation(conversation_id: str):
         raise HTTPException(status_code=404, detail="Conversation not found")
     return conversation
 
-@app.post("/api/conversations/{conversation_id}/message")
+@app.post("/api/conversations/{conversation_id}/message/stream")
 async def send_message_and_process(
     conversation_id: str,
     content: str = Form(...), # User Prompt
@@ -138,25 +140,85 @@ async def send_message_and_process(
 
     # 5. QUYẾT ĐỊNH LOGIC XỬ LÝ
     if is_outpainting_task and image_data:
-        try:
-            print(f"🚀 Detected Outpainting Task for {conversation_id}...")
-            
-            # Gọi Council (Truyền image_data trực tiếp để AI xử lý nhanh nhất)
-            result = await council.run_task(
-                user_query=content,
-                image_url=image_url,       # Để AI reference nếu cần
-                image_data=image_data,     # Dữ liệu ảnh raw (quan trọng cho Gemini REST)
-                image_mime_type=image_mime_type
-            )
-            
-            # Lưu kết quả AI
-            storage.add_assistant_message(conversation_id, result, task_type="outpainting")
-            return result
+        print(f"🚀 Detected Outpainting Task for {conversation_id}...")
 
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            raise HTTPException(status_code=500, detail=f"Council processing failed: {str(e)}")
+        async def event_generator():
+            try:
+                yield f"data: {json.dumps({'type': 'start'})}\n\n"
+
+                # GỌI COUNCIL XỬ LÝ (STREAM KẾT QUẢ)
+                # ==== STAGE 1 ====
+                yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
+
+                stage1_results = await council._stage1_collect_responses(
+                    content, image_url, image_data, image_mime_type
+                )
+
+                yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
+
+                # ==== STAGE 2 ====
+                yield f"data: {json.dumps({'type': 'stage2_start'})}\n\n"
+
+                stage2_results = await council._stage2_complete_responses(
+                    content, stage1_results, image_url, image_data, image_mime_type
+                )
+
+                stage2_payload = {
+                    "type": "stage2_complete",
+                    "data": stage2_results
+                }
+
+                yield f"data: {json.dumps(stage2_payload)}\n\n"
+                # ==== STAGE 3 ====
+                yield f"data: {json.dumps({'type': 'stage3_start'})}\n\n"
+
+                final_result = await council._stage3_evaluate_and_select(
+                    content, stage2_results, image_url, image_data, image_mime_type
+                )
+
+                final_payload = {
+                    "type": "stage3_complete",
+                    "data": {
+                        "model": final_result.get("selected_model"),
+                        "response": final_result.get("selected_response"),
+                        "evaluation": final_result.get("evaluation"),
+                    }
+                }
+
+                yield f"data: {json.dumps(final_payload)}\n\n"
+
+                # ==== SAVE RESULT ====
+                storage.add_assistant_message(
+                    conversation_id,
+                    {
+                        "stage1_results": stage1_results,
+                        "stage2_results": stage2_results,
+                        "final_result": final_result
+                    },
+                    task_type="outpainting"
+                )
+
+                yield f"data: {json.dumps({'type': 'complete'})}\n\n"
+
+            except Exception as e:
+                error_payload = {
+                    "type": "error",
+                    "data": {
+                        "message": str(e)
+                    }
+                }
+
+                yield f"data: {json.dumps(error_payload)}\n\n"
+
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            }
+        )
             
     else:
         # TRƯỜNG HỢP: Không phải task outpainting hoặc không có ảnh

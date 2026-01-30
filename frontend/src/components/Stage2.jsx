@@ -45,9 +45,9 @@ export default function Stage2({ results }) {
           <div className="refinement-block perfected">
             <h4>Refined Response</h4>
             <div className="markdown-content">
-              {/* <ReactMarkdown>
+              <ReactMarkdown>
                 {results[activeTab].perfected_response}
-              </ReactMarkdown> */}
+              </ReactMarkdown>
               
             </div>
           </div>

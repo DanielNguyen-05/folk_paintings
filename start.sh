@@ -7,17 +7,11 @@ source .venv/bin/activate
 
 echo "🚀 Starting LLM Council..."
 
-# 1. Kiểm tra Ollama đã chạy chưa
-if ! pgrep -x "ollama" > /dev/null && ! pgrep -x "Ollama" > /dev/null; then
-    echo "⚠️  Ollama chưa chạy! Hãy mở app Ollama lên trước."
-    # Trên Mac có thể thử mở tự động: open -a Ollama
-fi
-
 echo ""
 
 # 2. Start Backend
 # Dùng 'python' thay vì 'uv run python' để tương thích tốt hơn
-echo "🔥 Starting backend on http://localhost:8001..."
+echo "🔥 Starting backend on http://localhost:8000..."
 python -m backend.main &
 BACKEND_PID=$!
 
@@ -33,7 +27,7 @@ FRONTEND_PID=$!
 echo ""
 echo "=================================================="
 echo "✓ LLM Council is running!"
-echo "  Backend:  http://localhost:8001"
+echo "  Backend:  http://localhost:8000"
 echo "  Frontend: http://localhost:5173"
 echo "=================================================="
 echo "Press Ctrl+C to stop."
